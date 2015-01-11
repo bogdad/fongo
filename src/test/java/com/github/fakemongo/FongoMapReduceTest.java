@@ -11,8 +11,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import com.mongodb.util.JSON;
 import org.assertj.core.api.Assertions;
+import org.bson.types.ObjectId;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -50,6 +52,32 @@ public class FongoMapReduceTest {
 
     List<DBObject> results = fongoRule.newCollection("result").find().toArray();
     assertEquals(fongoRule.parse("[{ \"_id\" : \"www.google.com\" , \"value\" : { \"count\" : 2.0}}, { \"_id\" : \"www.no-fucking-idea.com\" , \"value\" : { \"count\" : 3.0}}]"), results);
+  }
+
+  @Test
+  public void testMapReduceObjectId() {
+    DBCollection coll = fongoRule.newCollection();
+    fongoRule.insertJSON(coll, "[{url: \"www.google.com\", date: 1, trash_data: { $oid: \"54741a5ce4b0059d8a4844a2\"} },\n" +
+        " {url: \"www.no-fucking-idea.com\", date: 1, trash_data: { $oid: \"54741a5ce4b0059d8a4844a3\"} },\n" +
+        " {url: \"www.google.com\", date: 1, trash_data: { $oid: \"54741a5ce4b0059d8a484453\"} },\n" +
+        " {url: \"www.no-fucking-idea.com\", date: 2, trash_data: { $oid: \"54741a5ce4b0059d8a4844a4\"} },\n" +
+        " {url: \"www.no-fucking-idea.com\", date: 2, trash_data: { $oid: \"54741a5ce4b0059d8a4844a5\"} }]");
+
+
+    String map = "function(){    emit(this.url, this.trash_data);  };";
+    String reduce = "function(key, values){    var res = [];    values.forEach(function(v){ res.push(v);});    " +
+        "return {all: res.sort()};  };";
+    coll.mapReduce(map, reduce, "result", new BasicDBObject());
+
+
+    List<DBObject> results = fongoRule.newCollection("result").find().toArray();
+    assertTrue(results.size() > 0);
+    for (DBObject res : results) {
+      DBObject value = (DBObject) res.get("value");
+      for (ObjectId oid : (List<ObjectId>) value.get("all")) {
+        assertEquals(oid.getClass(), ObjectId.class);
+      }
+    }
   }
 
   @Test
