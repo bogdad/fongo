@@ -10,8 +10,9 @@ import com.mongodb.FongoDBCollection;
 import com.mongodb.util.JSON;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
-
+import org.bson.types.ObjectId;
 import org.mozilla.javascript.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -184,7 +185,7 @@ public class MapReduce {
       List<DBObject> dbOuts = new ArrayList<DBObject>();
       for (int i = 0; i < outs.getLength(); i++) {
         NativeObject out = (NativeObject) outs.get(i, outs);
-        dbOuts.add(getObject(out));
+        dbOuts.add((DBObject) fixMongoTypes(getObject(out)));
       }
       return dbOuts;
     } finally {
@@ -211,7 +212,7 @@ public class MapReduce {
       List<DBObject> dbOuts = new ArrayList<DBObject>();
       for (int i = 0; i < outs.getLength(); i++) {
         NativeObject out = (NativeObject) outs.get(i, outs);
-        dbOuts.add(getObject(out));
+        dbOuts.add((DBObject) fixMongoTypes(getObject(out)));
       }
 
       LOG.debug("reduceOutputStage() : {}", dbOuts);
@@ -221,6 +222,28 @@ public class MapReduce {
     }
   }
 
+  private Object fixMongoTypes(Object dbObject) {
+    if (!(dbObject instanceof DBObject)) {
+      return dbObject;
+    } else if (dbObject instanceof List) {
+      BasicDBList list = new BasicDBList();
+      for(Object o : (List) dbObject) {
+        list.add(fixMongoTypes(o));
+      }
+      return list;
+    } else if (dbObject instanceof Map) {
+      BasicDBObject map = new BasicDBObject();
+      Map<String, Object> asMap = (Map<String, Object>) dbObject;
+      if (asMap.containsKey("$oid")) {
+        return new ObjectId((String) asMap.get("$oid"));
+      }
+      for (String key : asMap.keySet()) {
+        map.put(key, fixMongoTypes(asMap.get(key)));
+      }
+      return map;
+    }
+    throw new IllegalStateException("should never happen");
+  }
 
   DBObject getObject(ScriptableObject no) {
     if (no instanceof NativeArray) {
