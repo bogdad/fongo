@@ -8,9 +8,15 @@ import com.mongodb.DBObject;
 import com.mongodb.FongoDB;
 import com.mongodb.FongoDBCollection;
 import com.mongodb.util.JSON;
+
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
 import java.util.UUID;
 import org.bson.types.ObjectId;
 import org.mozilla.javascript.*;
@@ -45,6 +51,14 @@ public class MapReduce {
   private final DBObject sort;
 
   private final int limit;
+
+  private static final ThreadLocal<DateFormat> THREAD_LOCAL_DATEFORMAT = new ThreadLocal<DateFormat>() {
+    protected DateFormat initialValue() {
+      SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+      sdf.setTimeZone(TimeZone.getTimeZone("GMT"));
+      return sdf;
+    }
+  };
 
   // http://docs.mongodb.org/manual/reference/method/db.collection.mapReduce/
   private enum Outmode {
@@ -236,6 +250,13 @@ public class MapReduce {
       Map<String, Object> asMap = (Map<String, Object>) dbObject;
       if (asMap.containsKey("$oid")) {
         return new ObjectId((String) asMap.get("$oid"));
+      }
+      if (asMap.containsKey("$date")) {
+        try {
+          return THREAD_LOCAL_DATEFORMAT.get().parse((String) asMap.get("$date"));
+        } catch (ParseException e) {
+          throw new RuntimeException(e);
+        }
       }
       for (String key : asMap.keySet()) {
         map.put(key, fixMongoTypes(asMap.get(key)));

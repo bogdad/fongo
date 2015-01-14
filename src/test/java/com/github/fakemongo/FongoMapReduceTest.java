@@ -7,10 +7,18 @@ import com.mongodb.DBObject;
 import com.mongodb.MapReduceCommand;
 import com.mongodb.MapReduceOutput;
 import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TimeZone;
+
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import com.mongodb.util.JSON;
 import org.assertj.core.api.Assertions;
@@ -26,7 +34,7 @@ import org.slf4j.LoggerFactory;
 public class FongoMapReduceTest {
   private static final Logger LOG = LoggerFactory.getLogger(FongoMapReduceTest.class);
 
-  public final FongoRule fongoRule = new FongoRule(false);
+  public final FongoRule fongoRule = new FongoRule(true);
 
   public final ExpectedException exception = ExpectedException.none();
 
@@ -65,7 +73,7 @@ public class FongoMapReduceTest {
 
 
     String map = "function(){    emit(this.url, this.trash_data);  };";
-    String reduce = "function(key, values){    var res = [];    values.forEach(function(v){ res.push(v);});    " +
+    String reduce = "function(key, values){    var res = []; values.forEach(function(v){ res.push(v);});    " +
         "return {all: res.sort()};  };";
     coll.mapReduce(map, reduce, "result", new BasicDBObject());
 
@@ -74,10 +82,44 @@ public class FongoMapReduceTest {
     assertTrue(results.size() > 0);
     for (DBObject res : results) {
       DBObject value = (DBObject) res.get("value");
-      for (ObjectId oid : (List<ObjectId>) value.get("all")) {
+      for (Object oid : (List<Object>) value.get("all")) {
         assertEquals(oid.getClass(), ObjectId.class);
       }
     }
+  }
+
+  @Test
+  public void testMapReduceDate() {
+    DBCollection coll = fongoRule.newCollection();
+    fongoRule.insertJSON(coll, "[{url: \"www.google.com\", date: 1, trash_data: { $date: \"2014-04-16T19:19:11.000Z\"} },\n" +
+        " {url: \"www.no-fucking-idea.com\", date: 1, trash_data: { $date: \"2014-04-16T19:49:41.000Z\"} },\n" +
+        " {url: \"www.google.com\", date: 1, trash_data: { $date: \"2014-04-16T19:19:11.000Z\"} },\n" +
+        " {url: \"www.no-fucking-idea.com\", date: 2, trash_data: { $date: \"2014-04-16T19:29:11.000Z\"} },\n" +
+        " {url: \"www.no-fucking-idea.com\", date: 2, trash_data: { $date: \"2014-04-16T19:39:11.000Z\"} }]");
+
+
+    String map = "function(){    emit(this.url, this.trash_data);  };";
+    String reduce = "function(key, values){    var res = []; values.forEach(function(v){ res.push(v);});    " +
+        "return {all: res.sort()};  };";
+    coll.mapReduce(map, reduce, "result", new BasicDBObject());
+
+    DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+    df.setTimeZone(TimeZone.getTimeZone("GMT"));
+    List<String> outputDates = new ArrayList<String>();
+    List<DBObject> results = fongoRule.newCollection("result").find().toArray();
+    assertTrue(results.size() > 0);
+    for (DBObject res : results) {
+      DBObject value = (DBObject) res.get("value");
+      for (Object date : (List<Object>) value.get("all")) {
+        assertNotNull(date);
+        assertEquals(date.getClass(), Date.class);
+        outputDates.add(df.format((Date) date));
+      }
+    }
+
+    List<String> expectedDates = Arrays.asList("2014-04-16T19:19:11.000Z", "2014-04-16T19:49:41.000Z",
+        "2014-04-16T19:19:11.000Z", "2014-04-16T19:29:11.000Z", "2014-04-16T19:39:11.000Z");
+    Assertions.assertThat(outputDates).containsAll(expectedDates);
   }
 
   @Test
